@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { PracticeSegment, TechnicalItem, MusicalPassage } from '../types';
 import { useApp } from './AppContext';
+import { getPassageTitle } from '../utils/srsScheduler';
 
 interface SegmentEditorProps {
   segment: PracticeSegment;
@@ -27,6 +28,7 @@ export function SegmentEditor({
   };
 
   const handleSwap = (item: TechnicalItem | MusicalPassage) => {
+    const title = item.type === 'passage' ? getPassageTitle(item as MusicalPassage) : item.title;
     dispatch({
       type: 'UPDATE_SEGMENT',
       payload: {
@@ -35,7 +37,7 @@ export function SegmentEditor({
         updates: {
           itemId: item.id,
           itemType: item.type,
-          title: item.title,
+          title,
           notes: item.notes,
           imageData: item.imageData,
         },
@@ -44,11 +46,14 @@ export function SegmentEditor({
     onClose();
   };
 
-  // Get all available items for swapping
+  // Get all available items for swapping (include initial routine passages too)
   const allItems: (TechnicalItem | MusicalPassage)[] = [
     ...state.technicalItems,
-    ...state.passages.filter(p => p.status === 'active'),
+    ...state.passages.filter(p => p.status === 'active' || p.status === 'initial'),
   ];
+
+  const getItemTitle = (item: TechnicalItem | MusicalPassage) =>
+    item.type === 'passage' ? getPassageTitle(item as MusicalPassage) : item.title;
 
   return (
     <div
@@ -170,7 +175,7 @@ export function SegmentEditor({
                       >
                         {item.type === 'technical' ? 'TECH' : 'MUSIC'}
                       </span>
-                      <span className="font-medium">{item.title}</span>
+                      <span className="font-medium">{getItemTitle(item)}</span>
                       {item.id === segment.itemId && (
                         <span className="text-[var(--color-tech-blue)] text-sm">(current)</span>
                       )}

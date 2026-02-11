@@ -22,7 +22,7 @@ import {
   generateId,
 } from '../utils/storage';
 import { generateDailyPractice, needsRegeneration } from '../utils/blockGenerator';
-import { advancePassageAfterPractice } from '../utils/srsScheduler';
+import { advancePassageAfterPractice, advanceToGebrian } from '../utils/srsScheduler';
 
 // ============================================
 // App State & Context
@@ -48,6 +48,7 @@ type AppAction =
   | { type: 'ADD_PASSAGE'; payload: Omit<MusicalPassage, 'id'> }
   | { type: 'UPDATE_PASSAGE'; payload: MusicalPassage }
   | { type: 'DELETE_PASSAGE'; payload: string }
+  | { type: 'ADVANCE_TO_GEBRIAN'; payload: string }
   | { type: 'SET_DAILY_PRACTICE'; payload: DailyPractice | null }
   | { type: 'REGENERATE_PRACTICE' }
   | { type: 'COMPLETE_SEGMENT'; payload: { blockId: string; segmentId: string; itemId: string } }
@@ -131,6 +132,17 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'DELETE_PASSAGE': {
       const passages = state.passages.filter(p => p.id !== action.payload);
+      savePassages(passages);
+      return { ...state, passages };
+    }
+
+    case 'ADVANCE_TO_GEBRIAN': {
+      const passages = state.passages.map(p => {
+        if (p.id === action.payload && p.status === 'initial') {
+          return advanceToGebrian(p);
+        }
+        return p;
+      });
       savePassages(passages);
       return { ...state, passages };
     }
