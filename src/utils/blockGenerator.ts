@@ -7,7 +7,7 @@ import type {
   AppSettings,
 } from '../types';
 import { DEFAULT_SETTINGS } from '../types';
-import { getDuePassages, getToday } from './srsScheduler';
+import { getDuePassages, getToday, getPassageTitle } from './srsScheduler';
 
 // ============================================
 // Smart Block Generator Engine
@@ -45,13 +45,14 @@ function createSegment(
   duration: number,
   order: number
 ): PracticeSegment {
+  const title = item.type === 'passage' ? getPassageTitle(item as MusicalPassage) : item.title;
   return {
     id: generateId(),
     itemId: item.id,
     itemType: item.type,
     duration,
     order,
-    title: item.title,
+    title,
     notes: item.notes,
     imageData: item.imageData,
   };
@@ -147,13 +148,14 @@ function generateBlock(
       if (minDur < 1) break;
 
       const duration = maxDur <= minDur ? minDur : randomDuration(minDur, maxDur);
+      const fillerTitle = getPassageTitle(fillerPassage);
       const segment: PracticeSegment = {
         id: generateId(),
         itemId: fillerPassage.id,
         itemType: 'passage',
         duration,
         order: order++,
-        title: `${fillerPassage.title} (Review)`,
+        title: `${fillerTitle} (Review)`,
         notes: fillerPassage.notes,
         imageData: fillerPassage.imageData,
       };

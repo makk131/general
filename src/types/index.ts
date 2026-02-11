@@ -4,10 +4,10 @@
 
 // Item Categories
 export type ItemType = 'technical' | 'passage';
-export type PassageStatus = 'active' | 'performance';
+export type PassageStatus = 'initial' | 'active' | 'performance';
 
-// SRS Phase definitions
-// Schedule: 3 days on → 1 off → 1 on → 1 off → 1 on → 7 off → 3 on → 14 off → 3 on → done
+// SRS Phase definitions (Molly Gebrian's spaced repetition system)
+// Schedule: 3on → 1off → 1on → 1off → 1on → 1off → 1on → 7off → 3on → 14off → 3on → done
 export interface SRSPhase {
   daysOn: number;
   daysOff: number;
@@ -16,13 +16,15 @@ export interface SRSPhase {
 export const SRS_SCHEDULE: SRSPhase[] = [
   { daysOn: 3, daysOff: 0 },   // Phase 0: First 3 days
   { daysOn: 0, daysOff: 1 },   // Phase 1: 1 day off
-  { daysOn: 1, daysOff: 0 },   // Phase 2: 1 day on
+  { daysOn: 1, daysOff: 0 },   // Phase 2: Review day 1
   { daysOn: 0, daysOff: 1 },   // Phase 3: 1 day off
-  { daysOn: 1, daysOff: 0 },   // Phase 4: 1 day on
-  { daysOn: 0, daysOff: 7 },   // Phase 5: 7 days off
-  { daysOn: 3, daysOff: 0 },   // Phase 6: 3 days on
-  { daysOn: 0, daysOff: 14 },  // Phase 7: 14 days off
-  { daysOn: 3, daysOff: 0 },   // Phase 8: Final 3 days on
+  { daysOn: 1, daysOff: 0 },   // Phase 4: Review day 2
+  { daysOn: 0, daysOff: 1 },   // Phase 5: 1 day off
+  { daysOn: 1, daysOff: 0 },   // Phase 6: Review day 3
+  { daysOn: 0, daysOff: 7 },   // Phase 7: 1 week off
+  { daysOn: 3, daysOff: 0 },   // Phase 8: Reinforcement 3 days
+  { daysOn: 0, daysOff: 14 },  // Phase 9: 2 weeks off
+  { daysOn: 3, daysOff: 0 },   // Phase 10: Final 3 days
 ];
 
 // Base item interface
@@ -44,13 +46,19 @@ export interface TechnicalItem extends BaseItem {
 export interface MusicalPassage extends BaseItem {
   type: 'passage';
   status: PassageStatus;
-  // SRS tracking
+  // Structured identification
+  composer: string;
+  piece: string; // movement or work name
+  bars: string; // bar numbers, e.g. "1-16" or "mm. 32-48"
+  // SRS tracking (Gebrian system)
   srsPhase: number; // Current phase in SRS_SCHEDULE
   phaseDay: number; // Current day within the phase (0-indexed)
-  startDate: string; // When this passage was added
+  startDate: string; // When this passage entered the Gebrian system
   lastPracticedDate?: string;
   nextDueDate?: string;
   completedDate?: string; // When it moved to performance bucket
+  initialRoutineStartDate?: string; // When passage was first created (initial routine)
+  gebriamStartDate?: string; // When passage entered the Gebrian system
 }
 
 export type PracticeItem = TechnicalItem | MusicalPassage;

@@ -2,8 +2,8 @@ import type { MusicalPassage } from '../types';
 import { SRS_SCHEDULE } from '../types';
 
 // ============================================
-// SRS Scheduler - Handles Spaced Repetition Logic
-// Schedule: 3 on → 1 off → 1 on → 1 off → 1 on → 7 off → 3 on → 14 off → 3 on
+// SRS Scheduler - Molly Gebrian Spaced Repetition System
+// Schedule: 3on → 1off → 1on → 1off → 1on → 1off → 1on → 7off → 3on → 14off → 3on
 // ============================================
 
 export function getToday(): string {
@@ -21,6 +21,15 @@ export function daysBetween(date1: string, date2: string): number {
   const d2 = new Date(date2);
   const diffTime = d2.getTime() - d1.getTime();
   return Math.floor(diffTime / (1000 * 60 * 60 * 24));
+}
+
+// Build a display title from structured passage fields
+export function getPassageTitle(passage: MusicalPassage): string {
+  const parts: string[] = [];
+  if (passage.composer) parts.push(passage.composer);
+  if (passage.piece) parts.push(passage.piece);
+  if (passage.bars) parts.push(`mm. ${passage.bars}`);
+  return parts.join(' — ') || passage.title;
 }
 
 // Calculate the next due date for a passage based on its current SRS state
@@ -46,6 +55,11 @@ export function calculateNextDueDate(passage: MusicalPassage): string {
 
 // Check if a passage is due today
 export function isPassageDueToday(passage: MusicalPassage): boolean {
+  // Initial routine passages are always due
+  if (passage.status === 'initial') {
+    return true;
+  }
+
   if (passage.status === 'performance') {
     return false;
   }
@@ -85,6 +99,16 @@ export function isPassageDueToday(passage: MusicalPassage): boolean {
 // Advance the passage to the next state after practice
 export function advancePassageAfterPractice(passage: MusicalPassage): MusicalPassage {
   const today = getToday();
+
+  // Initial routine passages don't advance through SRS, just track practice
+  if (passage.status === 'initial') {
+    return {
+      ...passage,
+      lastPracticedDate: today,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
   let { srsPhase, phaseDay } = passage;
 
   if (srsPhase >= SRS_SCHEDULE.length) {
@@ -151,8 +175,28 @@ export function advancePassageAfterPractice(passage: MusicalPassage): MusicalPas
   };
 }
 
+// Advance a passage from initial routine into the Gebrian system
+export function advanceToGebrian(passage: MusicalPassage): MusicalPassage {
+  const today = getToday();
+  return {
+    ...passage,
+    status: 'active',
+    srsPhase: 0,
+    phaseDay: 0,
+    startDate: today,
+    gebriamStartDate: today,
+    nextDueDate: today,
+    lastPracticedDate: undefined,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 // Get human-readable phase description
 export function getPhaseDescription(passage: MusicalPassage): string {
+  if (passage.status === 'initial') {
+    return 'Initial Routine';
+  }
+
   if (passage.status === 'performance') {
     return 'Performance Ready';
   }
@@ -164,30 +208,69 @@ export function getPhaseDescription(passage: MusicalPassage): string {
   const phase = SRS_SCHEDULE[passage.srsPhase];
   const phaseNames = [
     'Initial Learning (Day 1-3)',
-    'Rest Day 1',
+    'Rest Day',
     'Review Day 1',
-    'Rest Day 2',
+    'Rest Day',
     'Review Day 2',
-    'Extended Rest (7 days)',
+    'Rest Day',
+    'Review Day 3',
+    'Extended Rest (1 week)',
     'Reinforcement (Day 1-3)',
-    'Long-term Rest (14 days)',
+    'Long Rest (2 weeks)',
     'Final Review (Day 1-3)',
   ];
 
   const phaseName = phaseNames[passage.srsPhase] || `Phase ${passage.srsPhase + 1}`;
 
   if (phase.daysOn > 0) {
-    return `${phaseName} - Day ${passage.phaseDay + 1}/${phase.daysOn}`;
+    return `${phaseName} — Day ${passage.phaseDay + 1}/${phase.daysOn}`;
   }
 
   return phaseName;
 }
 
+// Get a short summary of where the passage is in the Gebrian cycle
+export function getGebriamProgress(passage: MusicalPassage): { step: number; totalSteps: number; label: string } {
+  if (passage.status === 'initial') {
+    return { step: 0, totalSteps: 7, label: 'Initial Routine' };
+  }
+  if (passage.status === 'performance') {
+    return { step: 7, totalSteps: 7, label: 'Performance Ready' };
+  }
+
+  // Map SRS phases to user-friendly Gebrian cycle steps:
+  // Step 1: Initial 3 days (phases 0)
+  // Step 2: Alternating on/off (phases 1-6)
+  // Step 3: 1 week rest (phase 7)
+  // Step 4: Reinforcement 3 days (phase 8)
+  // Step 5: 2 week rest (phase 9)
+  // Step 6: Final 3 days (phase 10)
+  const phaseToStep: Record<number, { step: number; label: string }> = {
+    0: { step: 1, label: '3 days on' },
+    1: { step: 2, label: 'Day off' },
+    2: { step: 2, label: 'Day on' },
+    3: { step: 2, label: 'Day off' },
+    4: { step: 2, label: 'Day on' },
+    5: { step: 2, label: 'Day off' },
+    6: { step: 2, label: 'Day on' },
+    7: { step: 3, label: '1 week off' },
+    8: { step: 4, label: '3 days on' },
+    9: { step: 5, label: '2 weeks off' },
+    10: { step: 6, label: '3 days on' },
+  };
+
+  const info = phaseToStep[passage.srsPhase] || { step: 6, label: 'Final' };
+  return { step: info.step, totalSteps: 7, label: info.label };
+}
+
 // Get passages that are due today, sorted by priority
 export function getDuePassages(passages: MusicalPassage[]): MusicalPassage[] {
   return passages
-    .filter(p => p.status === 'active' && isPassageDueToday(p))
+    .filter(p => (p.status === 'active' || p.status === 'initial') && isPassageDueToday(p))
     .sort((a, b) => {
+      // Initial routine passages first
+      if (a.status === 'initial' && b.status !== 'initial') return -1;
+      if (a.status !== 'initial' && b.status === 'initial') return 1;
       // Prioritize earlier phases (newer learnings need more attention)
       if (a.srsPhase !== b.srsPhase) {
         return a.srsPhase - b.srsPhase;
@@ -206,22 +289,29 @@ export function getPerformancePassages(passages: MusicalPassage[]): MusicalPassa
   return passages.filter(p => p.status === 'performance');
 }
 
-// Create a new passage with initial SRS state
+// Create a new passage with initial routine state
 export function createNewPassage(
-  title: string,
+  composer: string,
+  piece: string,
+  bars: string,
   notes: string,
   imageData?: string
 ): Omit<MusicalPassage, 'id'> {
   const today = getToday();
+  const title = [composer, piece, bars ? `mm. ${bars}` : ''].filter(Boolean).join(' — ');
   return {
     type: 'passage',
     title,
+    composer,
+    piece,
+    bars,
     notes,
     imageData,
-    status: 'active',
+    status: 'initial',
     srsPhase: 0,
     phaseDay: 0,
     startDate: today,
+    initialRoutineStartDate: today,
     nextDueDate: today,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
