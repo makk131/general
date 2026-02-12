@@ -264,13 +264,12 @@ export function getGebriamProgress(passage: MusicalPassage): { step: number; tot
 }
 
 // Get passages that are due today, sorted by priority
+// Only includes active (Gebrian) passages — initial routine and performance
+// passages are practiced separately in blocked practice sessions.
 export function getDuePassages(passages: MusicalPassage[]): MusicalPassage[] {
   return passages
-    .filter(p => (p.status === 'active' || p.status === 'initial') && isPassageDueToday(p))
+    .filter(p => p.status === 'active' && isPassageDueToday(p))
     .sort((a, b) => {
-      // Initial routine passages first
-      if (a.status === 'initial' && b.status !== 'initial') return -1;
-      if (a.status !== 'initial' && b.status === 'initial') return 1;
       // Prioritize earlier phases (newer learnings need more attention)
       if (a.srsPhase !== b.srsPhase) {
         return a.srsPhase - b.srsPhase;
@@ -289,16 +288,37 @@ export function getPerformancePassages(passages: MusicalPassage[]): MusicalPassa
   return passages.filter(p => p.status === 'performance');
 }
 
-// Create a new passage with initial routine state
+// Create a new passage with initial routine state (or directly as performance ready)
 export function createNewPassage(
   composer: string,
   piece: string,
   bars: string,
   notes: string,
-  imageData?: string
+  imageData?: string,
+  asPerformance: boolean = false
 ): Omit<MusicalPassage, 'id'> {
   const today = getToday();
   const title = [composer, piece, bars ? `mm. ${bars}` : ''].filter(Boolean).join(' — ');
+
+  if (asPerformance) {
+    return {
+      type: 'passage',
+      title,
+      composer,
+      piece,
+      bars,
+      notes,
+      imageData,
+      status: 'performance',
+      srsPhase: SRS_SCHEDULE.length,
+      phaseDay: 0,
+      startDate: today,
+      completedDate: today,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
   return {
     type: 'passage',
     title,

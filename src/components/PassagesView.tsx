@@ -16,6 +16,7 @@ interface PassageFormData {
   bars: string;
   notes: string;
   imageData?: string;
+  addToPerformance: boolean;
 }
 
 const emptyForm: PassageFormData = {
@@ -24,6 +25,7 @@ const emptyForm: PassageFormData = {
   bars: '',
   notes: '',
   imageData: undefined,
+  addToPerformance: false,
 };
 
 type PassageTab = 'initial' | 'gebrian' | 'performance';
@@ -122,7 +124,8 @@ export function PassagesView() {
         formData.piece,
         formData.bars,
         formData.notes,
-        formData.imageData
+        formData.imageData,
+        formData.addToPerformance
       );
       dispatch({ type: 'ADD_PASSAGE', payload: newPassage });
     }
@@ -139,6 +142,7 @@ export function PassagesView() {
       bars: passage.bars || '',
       notes: passage.notes,
       imageData: passage.imageData,
+      addToPerformance: false,
     });
     setEditingId(passage.id);
     setIsFormOpen(true);
@@ -421,6 +425,29 @@ export function PassagesView() {
                   </div>
                 )}
               </div>
+
+              {!editingId && (
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, addToPerformance: !prev.addToPerformance }))}
+                    className={`relative w-12 h-7 rounded-full transition-colors ${
+                      formData.addToPerformance
+                        ? 'bg-[var(--color-performance-gold)]'
+                        : 'bg-[var(--color-bg-input)]'
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white transition-transform ${
+                        formData.addToPerformance ? 'translate-x-5' : ''
+                      }`}
+                    />
+                  </button>
+                  <label className="text-sm text-[var(--color-text-secondary)]">
+                    Add directly to Performance
+                  </label>
+                </div>
+              )}
 
               <div className="flex gap-3 pt-4">
                 <button
