@@ -283,6 +283,12 @@ export function getDuePassages(passages: MusicalPassage[]): MusicalPassage[] {
     });
 }
 
+// Get all active (Gebrian) passages available for scheduling as review material,
+// regardless of whether they are due today per the SRS schedule.
+export function getSchedulablePassages(passages: MusicalPassage[]): MusicalPassage[] {
+  return passages.filter(p => p.status === 'active');
+}
+
 // Get passages in the performance bucket
 export function getPerformancePassages(passages: MusicalPassage[]): MusicalPassage[] {
   return passages.filter(p => p.status === 'performance');

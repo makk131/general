@@ -7,7 +7,7 @@ import type {
   AppSettings,
 } from '../types';
 import { DEFAULT_SETTINGS } from '../types';
-import { getDuePassages, getToday, getPassageTitle } from './srsScheduler';
+import { getDuePassages, getToday, getPassageTitle, getSchedulablePassages } from './srsScheduler';
 
 // ============================================
 // Smart Block Generator Engine
@@ -75,9 +75,6 @@ function generateBlock(
   let totalDuration = 0;
   let order = 0;
 
-  // Track which items we've used in this block to allow re-use for filler
-  const passagesUsedThisBlock: MusicalPassage[] = [];
-
   // Helper to add a segment
   const addSegment = (item: TechnicalItem | MusicalPassage) => {
     const remainingTime = targetBlockDuration - totalDuration;
@@ -92,29 +89,51 @@ function generateBlock(
     totalDuration += duration;
     usedInBlock.add(item.id);
 
-    if (item.type === 'passage') {
-      passagesUsedThisBlock.push(item);
-    }
-
     return true;
   };
 
-  // Strategy: Interleave technical and passage items
-  // Prioritize passages (new and review) over technical items
+  // Helper to add a review passage segment
+  const addReviewSegment = (passage: MusicalPassage) => {
+    const remainingTime = targetBlockDuration - totalDuration;
+    const maxDur = Math.min(maxSegmentDuration, remainingTime);
+    const minDur = Math.min(minSegmentDuration, remainingTime);
+
+    if (minDur < 1) return false;
+
+    const duration = maxDur <= minDur ? minDur : randomDuration(minDur, maxDur);
+    const segment: PracticeSegment = {
+      id: generateId(),
+      itemId: passage.id,
+      itemType: 'passage',
+      duration,
+      order: order++,
+      title: `${getPassageTitle(passage)} (Review)`,
+      notes: passage.notes,
+      imageData: passage.imageData,
+    };
+    segments.push(segment);
+    totalDuration += duration;
+    return true;
+  };
+
+  // Rotate through filler passages round-robin style
+  let fillerIndex = 0;
+
+  // Strategy: Always include music. Due passages first, then review any
+  // active passage. Technical items fill in around the music.
   while (totalDuration < targetBlockDuration - 1) {
     const availablePassages = pool.passages.filter(p => !usedInBlock.has(p.id));
     const availableTechnical = pool.technical.filter(t => !usedInBlock.has(t.id));
-    const hasFillers = passagesUsedThisBlock.length > 0;
+    const hasFillers = pool.fillerPassages.length > 0;
 
-    // Calculate weights — passages and passage reviews are prioritized over technical
+    // Calculate weights — music always takes priority
     const passageWeight = availablePassages.length > 0 ? 4 : 0;
-    const fillerWeight = hasFillers && passageWeight === 0 ? 3 : hasFillers ? 2 : 0;
+    const fillerWeight = hasFillers ? (passageWeight === 0 ? 4 : 2) : 0;
     const technicalWeight = availableTechnical.length > 0 ? 1 : 0;
 
     const totalWeight = passageWeight + fillerWeight + technicalWeight;
 
     if (totalWeight === 0) {
-      // No items available at all
       break;
     }
 
@@ -122,35 +141,15 @@ function generateBlock(
 
     if (roll < passageWeight && availablePassages.length > 0) {
       // Priority 1: New due passage
-      const passage = availablePassages[0]; // Already sorted by priority
+      const passage = availablePassages[0];
       pool.passages = pool.passages.filter(p => p.id !== passage.id);
       if (!addSegment(passage)) break;
     } else if (roll < passageWeight + fillerWeight && hasFillers) {
-      // Priority 2: Review passage — repeat passages practiced earlier
-      const fillerPassage = passagesUsedThisBlock[0];
-      passagesUsedThisBlock.push(passagesUsedThisBlock.shift()!); // Rotate
+      // Priority 2: Review passage — rotate through all active passages
+      const fillerPassage = pool.fillerPassages[fillerIndex % pool.fillerPassages.length];
+      fillerIndex++;
       usedInBlock.delete(fillerPassage.id); // Allow re-use
-
-      const remainingTime = targetBlockDuration - totalDuration;
-      const maxDur = Math.min(maxSegmentDuration, remainingTime);
-      const minDur = Math.min(minSegmentDuration, remainingTime);
-
-      if (minDur < 1) break;
-
-      const duration = maxDur <= minDur ? minDur : randomDuration(minDur, maxDur);
-      const fillerTitle = getPassageTitle(fillerPassage);
-      const segment: PracticeSegment = {
-        id: generateId(),
-        itemId: fillerPassage.id,
-        itemType: 'passage',
-        duration,
-        order: order++,
-        title: `${fillerTitle} (Review)`,
-        notes: fillerPassage.notes,
-        imageData: fillerPassage.imageData,
-      };
-      segments.push(segment);
-      totalDuration += duration;
+      if (!addReviewSegment(fillerPassage)) break;
     } else if (availableTechnical.length > 0) {
       // Priority 3: Technical item
       const techIndex = Math.floor(Math.random() * availableTechnical.length);
@@ -158,7 +157,6 @@ function generateBlock(
       pool.technical = pool.technical.filter(t => t.id !== tech.id);
       if (!addSegment(tech)) break;
     } else {
-      // Nothing else to add
       break;
     }
   }
@@ -182,14 +180,15 @@ export function generateDailyPractice(
 ): DailyPractice {
   const today = getToday();
 
-  // Get due passages, sorted by priority
+  // Get due passages (SRS priority) and all schedulable passages (for review)
   const duePassages = getDuePassages(passages);
+  const allSchedulable = getSchedulablePassages(passages);
 
   // Create mutable pools for distribution across blocks
   const pool: ItemPool = {
     technical: shuffle([...technicalItems]),
     passages: [...duePassages],
-    fillerPassages: [...duePassages], // Backup for when we need fillers
+    fillerPassages: shuffle([...allSchedulable]), // All active passages for review
   };
 
   const blocks: PracticeBlock[] = [];
