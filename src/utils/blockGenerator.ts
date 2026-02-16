@@ -100,20 +100,18 @@ function generateBlock(
   };
 
   // Strategy: Interleave technical and passage items
-  // Use a weighted random selection favoring due passages
+  // Prioritize passages (new and review) over technical items
   while (totalDuration < targetBlockDuration - 1) {
     const availablePassages = pool.passages.filter(p => !usedInBlock.has(p.id));
     const availableTechnical = pool.technical.filter(t => !usedInBlock.has(t.id));
+    const hasFillers = passagesUsedThisBlock.length > 0;
 
-    // Calculate weights based on priority
-    const passageWeight = availablePassages.length > 0 ? 3 : 0;
-    const technicalWeight = availableTechnical.length > 0 ? 2 : 0;
-    const fillerWeight =
-      passageWeight === 0 && technicalWeight === 0 && passagesUsedThisBlock.length > 0
-        ? 1
-        : 0;
+    // Calculate weights — passages and passage reviews are prioritized over technical
+    const passageWeight = availablePassages.length > 0 ? 4 : 0;
+    const fillerWeight = hasFillers && passageWeight === 0 ? 3 : hasFillers ? 2 : 0;
+    const technicalWeight = availableTechnical.length > 0 ? 1 : 0;
 
-    const totalWeight = passageWeight + technicalWeight + fillerWeight;
+    const totalWeight = passageWeight + fillerWeight + technicalWeight;
 
     if (totalWeight === 0) {
       // No items available at all
@@ -123,24 +121,16 @@ function generateBlock(
     const roll = Math.random() * totalWeight;
 
     if (roll < passageWeight && availablePassages.length > 0) {
-      // Priority 1: Due passage
+      // Priority 1: New due passage
       const passage = availablePassages[0]; // Already sorted by priority
       pool.passages = pool.passages.filter(p => p.id !== passage.id);
       if (!addSegment(passage)) break;
-    } else if (roll < passageWeight + technicalWeight && availableTechnical.length > 0) {
-      // Priority 2: Technical item
-      const techIndex = Math.floor(Math.random() * availableTechnical.length);
-      const tech = availableTechnical[techIndex];
-      pool.technical = pool.technical.filter(t => t.id !== tech.id);
-      if (!addSegment(tech)) break;
-    } else if (fillerWeight > 0) {
-      // Priority 3: Filler - repeat passages practiced earlier
-      // Reset the "used" status for passages to allow re-use
+    } else if (roll < passageWeight + fillerWeight && hasFillers) {
+      // Priority 2: Review passage — repeat passages practiced earlier
       const fillerPassage = passagesUsedThisBlock[0];
       passagesUsedThisBlock.push(passagesUsedThisBlock.shift()!); // Rotate
       usedInBlock.delete(fillerPassage.id); // Allow re-use
 
-      // Create segment with modified title to indicate repetition
       const remainingTime = targetBlockDuration - totalDuration;
       const maxDur = Math.min(maxSegmentDuration, remainingTime);
       const minDur = Math.min(minSegmentDuration, remainingTime);
@@ -161,6 +151,12 @@ function generateBlock(
       };
       segments.push(segment);
       totalDuration += duration;
+    } else if (availableTechnical.length > 0) {
+      // Priority 3: Technical item
+      const techIndex = Math.floor(Math.random() * availableTechnical.length);
+      const tech = availableTechnical[techIndex];
+      pool.technical = pool.technical.filter(t => t.id !== tech.id);
+      if (!addSegment(tech)) break;
     } else {
       // Nothing else to add
       break;
