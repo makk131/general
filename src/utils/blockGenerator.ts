@@ -34,9 +34,9 @@ function shuffle<T>(array: T[]): T[] {
 }
 
 interface ItemPool {
-  technical: TechnicalItem[];
+  technical: TechnicalItem[]; // This block's assigned technical items
   passages: MusicalPassage[];
-  fillerPassages: MusicalPassage[]; // For when we run out of due passages
+  fillerPassages: MusicalPassage[]; // All active passages for review
 }
 
 // Create a segment from an item
@@ -116,49 +116,68 @@ function generateBlock(
     return true;
   };
 
-  // Rotate through filler passages round-robin style
+  // Strategy: Interleave this block's assigned technical items (each exactly
+  // once) with musical passages. Music fills the majority of time; technical
+  // items are spaced out evenly throughout the block.
+
+  // Figure out roughly how many segments we'll have, then space tech items out
+  const techItems = [...pool.technical];
+  let techPlaced = 0;
+  let segmentsSinceTech = 0;
+  // Place a tech item roughly every N segments to spread them out
+  const totalEstimatedSegments = Math.floor(targetBlockDuration / ((minSegmentDuration + maxSegmentDuration) / 2));
+  const techInterval = techItems.length > 0
+    ? Math.max(1, Math.floor(totalEstimatedSegments / (techItems.length + 1)))
+    : Infinity;
+
   let fillerIndex = 0;
 
-  // Strategy: Always include music. Due passages first, then review any
-  // active passage. Technical items fill in around the music.
   while (totalDuration < targetBlockDuration - 1) {
-    const availablePassages = pool.passages.filter(p => !usedInBlock.has(p.id));
-    const availableTechnical = pool.technical.filter(t => !usedInBlock.has(t.id));
-    const hasFillers = pool.fillerPassages.length > 0;
+    // Check if it's time to place a technical item
+    const shouldPlaceTech = techPlaced < techItems.length && segmentsSinceTech >= techInterval;
 
-    // Calculate weights — music always takes priority
-    const passageWeight = availablePassages.length > 0 ? 4 : 0;
-    const fillerWeight = hasFillers ? (passageWeight === 0 ? 4 : 2) : 0;
-    const technicalWeight = availableTechnical.length > 0 ? 1 : 0;
-
-    const totalWeight = passageWeight + fillerWeight + technicalWeight;
-
-    if (totalWeight === 0) {
-      break;
+    if (shouldPlaceTech) {
+      const tech = techItems[techPlaced];
+      techPlaced++;
+      segmentsSinceTech = 0;
+      if (!addSegment(tech)) break;
+      continue;
     }
 
-    const roll = Math.random() * totalWeight;
+    // Otherwise fill with music
+    const availablePassages = pool.passages.filter(p => !usedInBlock.has(p.id));
+    const hasFillers = pool.fillerPassages.length > 0;
 
-    if (roll < passageWeight && availablePassages.length > 0) {
-      // Priority 1: New due passage
+    if (availablePassages.length > 0) {
+      // Due passage first
       const passage = availablePassages[0];
       pool.passages = pool.passages.filter(p => p.id !== passage.id);
       if (!addSegment(passage)) break;
-    } else if (roll < passageWeight + fillerWeight && hasFillers) {
-      // Priority 2: Review passage — rotate through all active passages
+    } else if (hasFillers) {
+      // Review passage — rotate through all active passages
       const fillerPassage = pool.fillerPassages[fillerIndex % pool.fillerPassages.length];
       fillerIndex++;
-      usedInBlock.delete(fillerPassage.id); // Allow re-use
+      usedInBlock.delete(fillerPassage.id);
       if (!addReviewSegment(fillerPassage)) break;
-    } else if (availableTechnical.length > 0) {
-      // Priority 3: Technical item
-      const techIndex = Math.floor(Math.random() * availableTechnical.length);
-      const tech = availableTechnical[techIndex];
-      pool.technical = pool.technical.filter(t => t.id !== tech.id);
+    } else if (techPlaced < techItems.length) {
+      // Only tech items left, place them
+      const tech = techItems[techPlaced];
+      techPlaced++;
+      segmentsSinceTech = 0;
       if (!addSegment(tech)) break;
+      continue;
     } else {
       break;
     }
+
+    segmentsSinceTech++;
+  }
+
+  // If block filled before all tech items were placed, append the remaining ones
+  while (techPlaced < techItems.length && totalDuration < targetBlockDuration + maxSegmentDuration) {
+    const tech = techItems[techPlaced];
+    techPlaced++;
+    if (!addSegment(tech)) break;
   }
 
   return {
@@ -184,30 +203,29 @@ export function generateDailyPractice(
   const duePassages = getDuePassages(passages);
   const allSchedulable = getSchedulablePassages(passages);
 
-  // Create mutable pools for distribution across blocks
-  const pool: ItemPool = {
-    technical: shuffle([...technicalItems]),
-    passages: [...duePassages],
-    fillerPassages: shuffle([...allSchedulable]), // All active passages for review
-  };
+  // Pre-distribute technical items evenly across 3 blocks (each appears exactly once)
+  const shuffledTech = shuffle([...technicalItems]);
+  const techPerBlock: TechnicalItem[][] = [[], [], []];
+  shuffledTech.forEach((item, i) => {
+    techPerBlock[i % 3].push(item);
+  });
+
+  // Due passages are shared across blocks (consumed from pool as used)
+  const sharedPassagePool = [...duePassages];
+  const fillerPool = shuffle([...allSchedulable]);
 
   const blocks: PracticeBlock[] = [];
-  const globalUsedSet = new Set<string>(); // Track items used across all blocks
 
   for (let i = 1; i <= 3; i++) {
-    // For each block, allow re-use of technical items but track passages carefully
     const blockUsedSet = new Set<string>();
-
-    // Replenish technical items for each block (they repeat daily)
-    if (pool.technical.length < technicalItems.length / 2) {
-      pool.technical = shuffle([...technicalItems]);
-    }
+    const pool: ItemPool = {
+      technical: techPerBlock[i - 1],
+      passages: sharedPassagePool,
+      fillerPassages: fillerPool,
+    };
 
     const block = generateBlock(i, pool, blockUsedSet, settings);
     blocks.push(block);
-
-    // Merge used items into global set
-    blockUsedSet.forEach(id => globalUsedSet.add(id));
   }
 
   return {
