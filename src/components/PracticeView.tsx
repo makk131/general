@@ -267,14 +267,29 @@ function BlockView({
   );
 }
 
+const BLOCK_DURATION_OPTIONS = [20, 25, 30] as const;
+
 export function PracticeView() {
   const { state, dispatch } = useApp();
   const [activeBlockIndex, setActiveBlockIndex] = useState(0);
+
+  const isRestDay = state.settings.lastRestDayDate === new Date().toISOString().split('T')[0];
 
   const handleRegenerate = () => {
     if (confirm('Regenerate today\'s practice blocks? This will reset your progress.')) {
       dispatch({ type: 'REGENERATE_PRACTICE' });
     }
+  };
+
+  const handleRestDay = () => {
+    if (confirm('Take a rest day? All Gebrian passages will be frozen and resume tomorrow.')) {
+      dispatch({ type: 'TAKE_REST_DAY' });
+    }
+  };
+
+  const handleBlockDurationChange = (duration: number) => {
+    dispatch({ type: 'UPDATE_SETTINGS', payload: { targetBlockDuration: duration } });
+    dispatch({ type: 'REGENERATE_PRACTICE' });
   };
 
   // Check if we have any items to practice
@@ -310,13 +325,29 @@ export function PracticeView() {
     );
   }
 
+  if (isRestDay) {
+    return (
+      <div className="text-center py-12 space-y-6">
+        <div className="bg-[var(--color-bg-card)] rounded-xl p-8 max-w-lg mx-auto">
+          <h2 className="text-2xl font-bold mb-4 text-[var(--color-performance-gold)]">Rest Day</h2>
+          <p className="text-[var(--color-text-secondary)] mb-2">
+            All Gebrian passages are frozen for today.
+          </p>
+          <p className="text-[var(--color-text-secondary)]">
+            Your schedule will pick up right where you left off tomorrow.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (!state.dailyPractice) {
     return (
       <div className="text-center py-12 space-y-6">
         <div className="bg-[var(--color-bg-card)] rounded-xl p-8 max-w-lg mx-auto">
           <h2 className="text-2xl font-bold mb-4">Generate Today's Practice</h2>
           <p className="text-[var(--color-text-secondary)] mb-6">
-            Ready to practice? Generate your three 25-minute blocks.
+            Ready to practice? Generate your three ~{state.settings.targetBlockDuration}-minute blocks.
           </p>
           <button
             onClick={() => dispatch({ type: 'REGENERATE_PRACTICE' })}
@@ -352,12 +383,43 @@ export function PracticeView() {
         <div className="flex gap-3">
           <Metronome />
           <button
+            onClick={handleRestDay}
+            className="touch-target px-4 py-2 bg-[var(--color-performance-gold)]/20 text-[var(--color-performance-gold)]
+                       rounded-lg hover:bg-[var(--color-performance-gold)]/30 transition-colors font-medium"
+          >
+            Rest Day
+          </button>
+          <button
             onClick={handleRegenerate}
             className="touch-target px-4 py-2 bg-[var(--color-bg-input)] text-[var(--color-text-secondary)]
                        rounded-lg hover:bg-[var(--color-bg-input)]/80 transition-colors"
           >
             Regenerate
           </button>
+        </div>
+      </div>
+
+      {/* Block Duration Selector */}
+      <div className="flex items-center gap-2">
+        <span className="text-sm text-[var(--color-text-secondary)]">Block length:</span>
+        <div className="flex gap-1">
+          {BLOCK_DURATION_OPTIONS.map(dur => (
+            <button
+              key={dur}
+              onClick={() => {
+                if (dur !== state.settings.targetBlockDuration) {
+                  handleBlockDurationChange(dur);
+                }
+              }}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                state.settings.targetBlockDuration === dur
+                  ? 'bg-[var(--color-tech-blue)] text-white'
+                  : 'bg-[var(--color-bg-input)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)]/80'
+              }`}
+            >
+              {dur} min
+            </button>
+          ))}
         </div>
       </div>
 

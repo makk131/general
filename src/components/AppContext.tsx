@@ -22,7 +22,7 @@ import {
   generateId,
 } from '../utils/storage';
 import { generateDailyPractice, needsRegeneration } from '../utils/blockGenerator';
-import { advancePassageAfterPractice, advanceToGebrian } from '../utils/srsScheduler';
+import { advancePassageAfterPractice, advanceToGebrian, addDays, getToday } from '../utils/srsScheduler';
 
 // ============================================
 // App State & Context
@@ -57,7 +57,8 @@ type AppAction =
   | { type: 'ADD_JOURNAL_ENTRY'; payload: Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'> }
   | { type: 'UPDATE_JOURNAL_ENTRY'; payload: JournalEntry }
   | { type: 'DELETE_JOURNAL_ENTRY'; payload: string }
-  | { type: 'UPDATE_SETTINGS'; payload: Partial<AppSettings> };
+  | { type: 'UPDATE_SETTINGS'; payload: Partial<AppSettings> }
+  | { type: 'TAKE_REST_DAY' };
 
 const initialState: AppState = {
   technicalItems: [],
@@ -283,6 +284,31 @@ function appReducer(state: AppState, action: AppAction): AppState {
       const settings = { ...state.settings, ...action.payload };
       saveSettings(settings);
       return { ...state, settings };
+    }
+
+    case 'TAKE_REST_DAY': {
+      const today = getToday();
+
+      // Push all active Gebrian passage dates forward by 1 day to freeze the cycle
+      const passages = state.passages.map(p => {
+        if (p.status !== 'active') return p;
+        return {
+          ...p,
+          startDate: addDays(p.startDate, 1),
+          lastPracticedDate: p.lastPracticedDate ? addDays(p.lastPracticedDate, 1) : undefined,
+          nextDueDate: p.nextDueDate ? addDays(p.nextDueDate, 1) : undefined,
+          gebriamStartDate: p.gebriamStartDate ? addDays(p.gebriamStartDate, 1) : undefined,
+          updatedAt: new Date().toISOString(),
+        };
+      });
+      savePassages(passages);
+
+      // Record the rest day and clear daily practice
+      const settings = { ...state.settings, lastRestDayDate: today };
+      saveSettings(settings);
+      saveDailyPractice(null);
+
+      return { ...state, passages, settings, dailyPractice: null };
     }
 
     default:

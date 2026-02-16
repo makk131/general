@@ -137,6 +137,7 @@ export interface AppSettings {
   targetBlockDuration: number; // in minutes, default 25
   minSegmentDuration: number; // default 2
   maxSegmentDuration: number; // default 6
+  lastRestDayDate?: string; // YYYY-MM-DD of last rest day taken
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
