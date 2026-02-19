@@ -46,7 +46,7 @@ export function calculateNextDueDate(passage: MusicalPassage): string {
   // If it's an "off" phase (daysOn === 0), calculate when next "on" phase starts
   if (currentPhase.daysOn === 0) {
     const baseDate = lastPracticedDate || startDate;
-    return addDays(baseDate, currentPhase.daysOff);
+    return addDays(baseDate, currentPhase.daysOff + 1);
   }
 
   // It's an "on" phase - due every day during this phase
@@ -83,9 +83,10 @@ export function isPassageDueToday(passage: MusicalPassage): boolean {
   }
 
   // If it's an "off" phase, check if the off period is complete
+  // e.g. daysOff=1 means skip 1 full day, so due when daysSince > 1
   if (currentPhase.daysOn === 0) {
     const daysSinceLastPractice = daysBetween(passage.lastPracticedDate, today);
-    return daysSinceLastPractice >= currentPhase.daysOff;
+    return daysSinceLastPractice > currentPhase.daysOff;
   }
 
   // It's an "on" phase - check if we still have days left in this phase
@@ -128,15 +129,11 @@ export function advancePassageAfterPractice(passage: MusicalPassage): MusicalPas
   if (currentPhase.daysOn > 0) {
     phaseDay++;
 
-    // Check if we've completed this phase
+    // Check if we've completed this phase — move to the next (which may be
+    // an off phase; that's intentional so the rest period is honoured)
     if (phaseDay >= currentPhase.daysOn) {
       srsPhase++;
       phaseDay = 0;
-
-      // Skip any "off" phases (they don't have days to practice)
-      while (srsPhase < SRS_SCHEDULE.length && SRS_SCHEDULE[srsPhase].daysOn === 0) {
-        srsPhase++;
-      }
     }
   } else {
     // Coming back from an "off" phase, move to next
@@ -206,27 +203,23 @@ export function getPhaseDescription(passage: MusicalPassage): string {
   }
 
   const phase = SRS_SCHEDULE[passage.srsPhase];
-  const phaseNames = [
-    'Initial Learning (Day 1-3)',
-    'Rest Day',
-    'Review Day 1',
-    'Rest Day',
-    'Review Day 2',
-    'Rest Day',
-    'Review Day 3',
-    'Extended Rest (1 week)',
-    'Reinforcement (Day 1-3)',
-    'Long Rest (2 weeks)',
-    'Final Review (Day 1-3)',
-  ];
 
-  const phaseName = phaseNames[passage.srsPhase] || `Phase ${passage.srsPhase + 1}`;
-
+  // On phase: "Day 2/3"
   if (phase.daysOn > 0) {
-    return `${phaseName} — Day ${passage.phaseDay + 1}/${phase.daysOn}`;
+    return `Day ${passage.phaseDay + 1}/${phase.daysOn}`;
   }
 
-  return phaseName;
+  // Off phase: "Off — back in Xd"
+  const today = getToday();
+  const daysSince = passage.lastPracticedDate
+    ? daysBetween(passage.lastPracticedDate, today)
+    : daysBetween(passage.startDate, today);
+  const daysLeft = Math.max(0, phase.daysOff + 1 - daysSince);
+
+  if (daysLeft > 0) {
+    return `Off — back in ${daysLeft}d`;
+  }
+  return 'Due';
 }
 
 // Get a short summary of where the passage is in the Gebrian cycle
