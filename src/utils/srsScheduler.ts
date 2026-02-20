@@ -110,6 +110,16 @@ export function advancePassageAfterPractice(passage: MusicalPassage): MusicalPas
     };
   }
 
+  // Only advance SRS state if the passage is actually due today.
+  // This prevents review segments from skipping rest periods.
+  if (!isPassageDueToday(passage)) {
+    return {
+      ...passage,
+      lastPracticedDate: today,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
   let { srsPhase, phaseDay } = passage;
 
   if (srsPhase >= SRS_SCHEDULE.length) {
@@ -276,10 +286,18 @@ export function getDuePassages(passages: MusicalPassage[]): MusicalPassage[] {
     });
 }
 
-// Get all active (Gebrian) passages available for scheduling as review material,
-// regardless of whether they are due today per the SRS schedule.
+// Get active passages available for scheduling as review material.
+// Excludes passages currently resting in an off phase.
 export function getSchedulablePassages(passages: MusicalPassage[]): MusicalPassage[] {
-  return passages.filter(p => p.status === 'active');
+  return passages.filter(p => {
+    if (p.status !== 'active') return false;
+    const phase = SRS_SCHEDULE[p.srsPhase];
+    if (!phase) return false;
+    // On-phase passages are always schedulable
+    if (phase.daysOn > 0) return true;
+    // Off-phase passages only if the rest period is complete (i.e. they're due)
+    return isPassageDueToday(p);
+  });
 }
 
 // Get passages in the performance bucket
