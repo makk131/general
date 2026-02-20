@@ -88,7 +88,9 @@ export function saveSettings(settings: AppSettings): void {
 }
 
 export function loadSettings(): AppSettings {
-  return loadFromStorage<AppSettings>(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS);
+  // Merge stored settings with defaults so new fields (like numBlocks) are always present
+  const stored = loadFromStorage<Partial<AppSettings>>(STORAGE_KEYS.SETTINGS, {});
+  return { ...DEFAULT_SETTINGS, ...stored };
 }
 
 // Load all app state at once

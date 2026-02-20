@@ -9,6 +9,7 @@ import {
   getGebriamProgress,
   isPassageDueToday,
 } from '../utils/srsScheduler';
+import { SRS_SCHEDULE } from '../types';
 
 interface PassageFormData {
   composer: string;
@@ -26,7 +27,7 @@ const emptyForm: PassageFormData = {
   imageData: undefined,
 };
 
-type PassageTab = 'initial' | 'gebrian' | 'performance';
+type PassageTab = 'initial' | 'gebrian' | 'resting' | 'performance';
 
 // Visual progress bar for the Gebrian cycle
 function GebriamProgressBar({ passage }: { passage: MusicalPassage }) {
@@ -76,7 +77,12 @@ export function PassagesView() {
   const [activeTab, setActiveTab] = useState<PassageTab>('initial');
 
   const initialPassages = state.passages.filter(p => p.status === 'initial');
-  const gebrianPassages = state.passages.filter(p => p.status === 'active');
+  const gebrianPassages = state.passages.filter(
+    p => p.status === 'active' && (SRS_SCHEDULE[p.srsPhase]?.daysOn ?? 0) > 0
+  );
+  const restingPassages = state.passages.filter(
+    p => p.status === 'active' && (SRS_SCHEDULE[p.srsPhase]?.daysOn ?? 1) === 0
+  );
   const performancePassages = state.passages.filter(p => p.status === 'performance');
 
   const handleImageUpload = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -154,6 +160,12 @@ export function PassagesView() {
     dispatch({ type: 'ADVANCE_TO_GEBRIAN', payload: passage.id });
   };
 
+  const handleSkipToRest = (passage: MusicalPassage) => {
+    if (confirm('Skip remaining on-days and jump straight to the next rest phase?')) {
+      dispatch({ type: 'ADVANCE_TO_NEXT_REST', payload: passage.id });
+    }
+  };
+
   const handleCancel = () => {
     setFormData(emptyForm);
     setEditingId(null);
@@ -196,6 +208,12 @@ export function PassagesView() {
                   Due Today
                 </span>
               )}
+              {passage.status === 'active' && !isDue && SRS_SCHEDULE[passage.srsPhase]?.daysOn === 0 && (
+                <span className="shrink-0 px-3 py-1 bg-[var(--color-performance-gold)]/15 text-[var(--color-performance-gold)]
+                                 rounded-full text-sm font-medium">
+                  Resting
+                </span>
+              )}
             </div>
             <p className={`mt-1 text-sm ${statusColor}`}>
               {phaseDescription}
@@ -233,6 +251,15 @@ export function PassagesView() {
                 Start Gebrian
               </button>
             )}
+            {passage.status === 'active' && SRS_SCHEDULE[passage.srsPhase]?.daysOn > 0 && (
+              <button
+                onClick={() => handleSkipToRest(passage)}
+                className="touch-target px-4 py-2 bg-[var(--color-performance-gold)]/20 text-[var(--color-performance-gold)]
+                           rounded-lg text-sm font-medium hover:bg-[var(--color-performance-gold)]/30 transition-colors"
+              >
+                Skip to Rest
+              </button>
+            )}
             <button
               onClick={() => handleEdit(passage)}
               className="touch-target px-4 py-2 bg-[var(--color-bg-input)] text-[var(--color-text-secondary)]
@@ -259,6 +286,8 @@ export function PassagesView() {
         return initialPassages;
       case 'gebrian':
         return gebrianPassages;
+      case 'resting':
+        return restingPassages;
       case 'performance':
         return performancePassages;
     }
@@ -269,7 +298,9 @@ export function PassagesView() {
       case 'initial':
         return 'No passages in initial routine. Add a new passage to get started!';
       case 'gebrian':
-        return 'No passages in the Gebrian system yet. Complete the initial routine for a passage, then tap "Start Gebrian" to begin spaced repetition.';
+        return 'No passages on active practice days. Passages appear here during their on-days in the Gebrian cycle.';
+      case 'resting':
+        return 'No passages currently resting. Passages appear here during their break periods between on-day blocks.';
       case 'performance':
         return 'No passages ready for performance yet. Passages move here after completing the full Gebrian cycle.';
     }
@@ -292,8 +323,8 @@ export function PassagesView() {
         </button>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1.5">
+      {/* Tabs — two rows so all four fit comfortably on narrow screens */}
+      <div className="flex gap-1.5 flex-wrap">
         <button
           onClick={() => setActiveTab('initial')}
           className={`touch-target px-4 py-2.5 rounded-lg text-sm font-medium transition-colors flex-1 ${
@@ -312,7 +343,17 @@ export function PassagesView() {
               : 'bg-[var(--color-bg-input)] text-[var(--color-text-secondary)]'
           }`}
         >
-          Gebrian ({gebrianPassages.length})
+          On ({gebrianPassages.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('resting')}
+          className={`touch-target px-4 py-2.5 rounded-lg text-sm font-medium transition-colors flex-1 ${
+            activeTab === 'resting'
+              ? 'bg-[var(--color-performance-gold)] text-white'
+              : 'bg-[var(--color-bg-input)] text-[var(--color-text-secondary)]'
+          }`}
+        >
+          Resting ({restingPassages.length})
         </button>
         <button
           onClick={() => setActiveTab('performance')}
@@ -326,8 +367,9 @@ export function PassagesView() {
         </button>
       </div>
 
-      {/* Gebrian cycle legend (shown on Gebrian tab) */}
-      {activeTab === 'gebrian' && gebrianPassages.length > 0 && (
+      {/* Gebrian cycle legend (shown on On/Resting tabs) */}
+      {(activeTab === 'gebrian' || activeTab === 'resting') &&
+        (gebrianPassages.length > 0 || restingPassages.length > 0) && (
         <div className="bg-[var(--color-bg-card)] rounded-lg p-3 text-xs text-[var(--color-text-secondary)]">
           <span className="font-medium text-[var(--color-text-primary)]">Gebrian cycle:</span>{' '}
           3 days on &rarr; off/on/off/on/off/on &rarr; 1 week off &rarr; 3 days &rarr; 2 weeks off &rarr; 3 days &rarr; Performance
