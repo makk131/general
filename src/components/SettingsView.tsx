@@ -35,6 +35,32 @@ export function SettingsView() {
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-2">
+              Number of Practice Blocks Per Day
+            </label>
+            <div className="flex gap-2 flex-wrap">
+              {[3, 4, 5, 6].map(n => (
+                <button
+                  key={n}
+                  onClick={() => handleSettingChange('numBlocks', n)}
+                  className={`
+                    touch-target px-6 py-3 rounded-lg text-lg font-medium transition-colors
+                    ${(state.settings.numBlocks ?? 3) === n
+                      ? 'bg-[var(--color-tech-blue)] text-white'
+                      : 'bg-[var(--color-bg-input)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-input)]/80'
+                    }
+                  `}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-[var(--color-text-secondary)] mt-2">
+              Takes effect when you next regenerate practice blocks.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-2">
               Target Block Duration (minutes)
             </label>
             <div className="flex items-center gap-4">

@@ -81,7 +81,7 @@ export interface PracticeSegment {
 
 export interface PracticeBlock {
   id: string;
-  blockNumber: number; // 1, 2, or 3
+  blockNumber: number;
   segments: PracticeSegment[];
   totalDuration: number; // Target ~25 minutes
   generatedDate: string;
@@ -137,6 +137,7 @@ export interface AppSettings {
   targetBlockDuration: number; // in minutes, default 25
   minSegmentDuration: number; // default 2
   maxSegmentDuration: number; // default 6
+  numBlocks: number; // number of practice blocks per day, default 3
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -145,6 +146,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   targetBlockDuration: 25,
   minSegmentDuration: 2,
   maxSegmentDuration: 6,
+  numBlocks: 3,
 };
 
 // ============================================

@@ -9,6 +9,7 @@ import {
   getGebriamProgress,
   isPassageDueToday,
 } from '../utils/srsScheduler';
+import { SRS_SCHEDULE } from '../types';
 
 interface PassageFormData {
   composer: string;
@@ -154,6 +155,12 @@ export function PassagesView() {
     dispatch({ type: 'ADVANCE_TO_GEBRIAN', payload: passage.id });
   };
 
+  const handleSkipToRest = (passage: MusicalPassage) => {
+    if (confirm('Skip remaining on-days and jump straight to the next rest phase?')) {
+      dispatch({ type: 'ADVANCE_TO_NEXT_REST', payload: passage.id });
+    }
+  };
+
   const handleCancel = () => {
     setFormData(emptyForm);
     setEditingId(null);
@@ -196,6 +203,12 @@ export function PassagesView() {
                   Due Today
                 </span>
               )}
+              {passage.status === 'active' && !isDue && SRS_SCHEDULE[passage.srsPhase]?.daysOn === 0 && (
+                <span className="shrink-0 px-3 py-1 bg-[var(--color-performance-gold)]/15 text-[var(--color-performance-gold)]
+                                 rounded-full text-sm font-medium">
+                  Resting
+                </span>
+              )}
             </div>
             <p className={`mt-1 text-sm ${statusColor}`}>
               {phaseDescription}
@@ -231,6 +244,15 @@ export function PassagesView() {
                            rounded-lg text-sm font-medium hover:bg-[var(--color-music-green-dark)] transition-colors"
               >
                 Start Gebrian
+              </button>
+            )}
+            {passage.status === 'active' && SRS_SCHEDULE[passage.srsPhase]?.daysOn > 0 && (
+              <button
+                onClick={() => handleSkipToRest(passage)}
+                className="touch-target px-4 py-2 bg-[var(--color-performance-gold)]/20 text-[var(--color-performance-gold)]
+                           rounded-lg text-sm font-medium hover:bg-[var(--color-performance-gold)]/30 transition-colors"
+              >
+                Skip to Rest
               </button>
             )}
             <button

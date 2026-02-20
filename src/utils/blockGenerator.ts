@@ -11,7 +11,7 @@ import { getDuePassages, getToday, getPassageTitle } from './srsScheduler';
 
 // ============================================
 // Smart Block Generator Engine
-// Creates 3 x 25-minute blocks with intelligent interleaving
+// Creates configurable number of 25-minute blocks with intelligent interleaving
 // ============================================
 
 function generateId(): string {
@@ -178,13 +178,14 @@ function generateBlock(
   };
 }
 
-// Main function: Generate all 3 daily practice blocks
+// Main function: Generate daily practice blocks (count controlled by settings.numBlocks)
 export function generateDailyPractice(
   technicalItems: TechnicalItem[],
   passages: MusicalPassage[],
   settings: AppSettings = DEFAULT_SETTINGS
 ): DailyPractice {
   const today = getToday();
+  const numBlocks = settings.numBlocks ?? 3;
 
   // Get due passages, sorted by priority
   const duePassages = getDuePassages(passages);
@@ -199,7 +200,7 @@ export function generateDailyPractice(
   const blocks: PracticeBlock[] = [];
   const globalUsedSet = new Set<string>(); // Track items used across all blocks
 
-  for (let i = 1; i <= 3; i++) {
+  for (let i = 1; i <= numBlocks; i++) {
     // For each block, allow re-use of technical items but track passages carefully
     const blockUsedSet = new Set<string>();
 

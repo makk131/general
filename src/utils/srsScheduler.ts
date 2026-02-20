@@ -37,19 +37,19 @@ export function calculateNextDueDate(passage: MusicalPassage): string {
   const { srsPhase, lastPracticedDate, startDate } = passage;
 
   if (srsPhase >= SRS_SCHEDULE.length) {
-    // Completed all phases, move to performance bucket
     return '';
   }
 
   const currentPhase = SRS_SCHEDULE[srsPhase];
 
-  // If it's an "off" phase (daysOn === 0), calculate when next "on" phase starts
+  // Off phase: daysOff is the number of full rest days, so practice resumes daysOff+1 days after last practice.
+  // e.g. 1 day off → practice next day = lastPracticed + 2
   if (currentPhase.daysOn === 0) {
     const baseDate = lastPracticedDate || startDate;
-    return addDays(baseDate, currentPhase.daysOff);
+    return addDays(baseDate, currentPhase.daysOff + 1);
   }
 
-  // It's an "on" phase - due every day during this phase
+  // On phase - due every day during this phase
   return lastPracticedDate ? addDays(lastPracticedDate, 1) : startDate;
 }
 
@@ -82,13 +82,14 @@ export function isPassageDueToday(passage: MusicalPassage): boolean {
     return false;
   }
 
-  // If it's an "off" phase, check if the off period is complete
+  // Off phase: rest is complete only after strictly more than daysOff days have passed.
+  // e.g. daysOff=1 → not due on day 1 after last practice, due on day 2+
   if (currentPhase.daysOn === 0) {
     const daysSinceLastPractice = daysBetween(passage.lastPracticedDate, today);
-    return daysSinceLastPractice >= currentPhase.daysOff;
+    return daysSinceLastPractice > currentPhase.daysOff;
   }
 
-  // It's an "on" phase - check if we still have days left in this phase
+  // On phase - check if we still have days left in this phase
   if (passage.phaseDay < currentPhase.daysOn) {
     return true;
   }
@@ -112,7 +113,6 @@ export function advancePassageAfterPractice(passage: MusicalPassage): MusicalPas
   let { srsPhase, phaseDay } = passage;
 
   if (srsPhase >= SRS_SCHEDULE.length) {
-    // Already completed
     return {
       ...passage,
       status: 'performance',
@@ -124,22 +124,17 @@ export function advancePassageAfterPractice(passage: MusicalPassage): MusicalPas
 
   const currentPhase = SRS_SCHEDULE[srsPhase];
 
-  // If it's an "on" phase, increment the day counter
   if (currentPhase.daysOn > 0) {
+    // On phase: increment the day counter
     phaseDay++;
 
-    // Check if we've completed this phase
+    // Completed this on-phase → advance to the next phase (which may be an off phase)
     if (phaseDay >= currentPhase.daysOn) {
       srsPhase++;
       phaseDay = 0;
-
-      // Skip any "off" phases (they don't have days to practice)
-      while (srsPhase < SRS_SCHEDULE.length && SRS_SCHEDULE[srsPhase].daysOn === 0) {
-        srsPhase++;
-      }
     }
   } else {
-    // Coming back from an "off" phase, move to next
+    // Coming back from an off phase (rest is over, user just practiced) → move to next phase
     srsPhase++;
     phaseDay = 0;
   }
@@ -169,6 +164,49 @@ export function advancePassageAfterPractice(passage: MusicalPassage): MusicalPas
     ...passage,
     srsPhase,
     phaseDay,
+    lastPracticedDate: today,
+    nextDueDate,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+// Skip a passage forward to the next rest (off) phase, bypassing remaining on-days.
+// Useful when returning from a break and not wanting to repeat all on-days.
+export function advanceToNextRestPhase(passage: MusicalPassage): MusicalPassage {
+  const today = getToday();
+  let { srsPhase } = passage;
+
+  // Advance past the current phase and any subsequent on-phases to find the next off phase
+  srsPhase++;
+  while (srsPhase < SRS_SCHEDULE.length && SRS_SCHEDULE[srsPhase].daysOn !== 0) {
+    srsPhase++;
+  }
+
+  // If we ran off the end, move to performance
+  if (srsPhase >= SRS_SCHEDULE.length) {
+    return {
+      ...passage,
+      srsPhase,
+      phaseDay: 0,
+      status: 'performance',
+      completedDate: today,
+      lastPracticedDate: today,
+      nextDueDate: undefined,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  const nextDueDate = calculateNextDueDate({
+    ...passage,
+    srsPhase,
+    phaseDay: 0,
+    lastPracticedDate: today,
+  });
+
+  return {
+    ...passage,
+    srsPhase,
+    phaseDay: 0,
     lastPracticedDate: today,
     nextDueDate,
     updatedAt: new Date().toISOString(),
@@ -226,6 +264,11 @@ export function getPhaseDescription(passage: MusicalPassage): string {
     return `${phaseName} — Day ${passage.phaseDay + 1}/${phase.daysOn}`;
   }
 
+  // For rest phases, show the resume date if available
+  if (passage.nextDueDate) {
+    return `${phaseName} — resumes ${new Date(passage.nextDueDate + 'T00:00:00').toLocaleDateString()}`;
+  }
+
   return phaseName;
 }
 
@@ -239,7 +282,7 @@ export function getGebriamProgress(passage: MusicalPassage): { step: number; tot
   }
 
   // Map SRS phases to user-friendly Gebrian cycle steps:
-  // Step 1: Initial 3 days (phases 0)
+  // Step 1: Initial 3 days (phase 0)
   // Step 2: Alternating on/off (phases 1-6)
   // Step 3: 1 week rest (phase 7)
   // Step 4: Reinforcement 3 days (phase 8)
