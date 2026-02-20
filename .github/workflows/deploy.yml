@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ['master']
+    branches: ['claude/practice-orchestrator-setup-wXX4H']
   workflow_dispatch:
 
 permissions:
