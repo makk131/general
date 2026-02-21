@@ -11,7 +11,13 @@ import { getDuePassages, getToday, getPassageTitle } from './srsScheduler';
 
 // ============================================
 // Smart Block Generator Engine
-// Creates configurable number of 25-minute blocks with intelligent interleaving
+// Creates configurable number of 20-30 minute blocks with intelligent distribution
+//
+// Rules:
+//   - Never include initial-bucket passages; only active Gebrian passages
+//   - Every technical item appears at least once across all blocks for the day
+//   - Every passage appears at least twice, spread across different blocks
+//   - No item ever repeats within a single block
 // ============================================
 
 function generateId(): string {
@@ -33,12 +39,6 @@ function shuffle<T>(array: T[]): T[] {
   return result;
 }
 
-interface ItemPool {
-  technical: TechnicalItem[];
-  passages: MusicalPassage[];
-  fillerPassages: MusicalPassage[]; // For when we run out of due passages
-}
-
 // Create a segment from an item
 function createSegment(
   item: TechnicalItem | MusicalPassage,
@@ -58,28 +58,27 @@ function createSegment(
   };
 }
 
-// Generate a single practice block with intelligent filling
+// Generate a single practice block from pre-assigned items.
+// assignedItems are the priority items for this block.
+// Falls back to unused items from the global pools to fill remaining time.
+// No item may appear more than once within a single block.
 function generateBlock(
   blockNumber: number,
-  pool: ItemPool,
-  usedInBlock: Set<string>,
+  assignedItems: Array<TechnicalItem | MusicalPassage>,
+  allPassages: MusicalPassage[],
+  allTechnical: TechnicalItem[],
   settings: AppSettings
 ): PracticeBlock {
-  const {
-    targetBlockDuration,
-    minSegmentDuration,
-    maxSegmentDuration,
-  } = settings;
+  const { targetBlockDuration, minSegmentDuration, maxSegmentDuration } = settings;
 
   const segments: PracticeSegment[] = [];
   let totalDuration = 0;
   let order = 0;
+  const usedInBlock = new Set<string>();
 
-  // Track which items we've used in this block to allow re-use for filler
-  const passagesUsedThisBlock: MusicalPassage[] = [];
+  const addItem = (item: TechnicalItem | MusicalPassage): boolean => {
+    if (usedInBlock.has(item.id)) return false;
 
-  // Helper to add a segment
-  const addSegment = (item: TechnicalItem | MusicalPassage) => {
     const remainingTime = targetBlockDuration - totalDuration;
     const maxDur = Math.min(maxSegmentDuration, remainingTime);
     const minDur = Math.min(minSegmentDuration, remainingTime);
@@ -87,83 +86,43 @@ function generateBlock(
     if (minDur < 1) return false;
 
     const duration = maxDur <= minDur ? minDur : randomDuration(minDur, maxDur);
-    const segment = createSegment(item, duration, order++);
-    segments.push(segment);
+    segments.push(createSegment(item, duration, order++));
     totalDuration += duration;
     usedInBlock.add(item.id);
-
-    if (item.type === 'passage') {
-      passagesUsedThisBlock.push(item);
-    }
-
     return true;
   };
 
-  // Strategy: Interleave technical and passage items
-  // Use a weighted random selection favoring due passages
-  while (totalDuration < targetBlockDuration - 1) {
-    const availablePassages = pool.passages.filter(p => !usedInBlock.has(p.id));
-    const availableTechnical = pool.technical.filter(t => !usedInBlock.has(t.id));
+  // Interleave assigned technical items and passages for natural practice flow
+  const assignedTech = shuffle(
+    assignedItems.filter(item => item.type === 'technical') as TechnicalItem[]
+  );
+  const assignedPassages = assignedItems.filter(
+    item => item.type === 'passage'
+  ) as MusicalPassage[];
 
-    // Calculate weights based on priority
-    const passageWeight = availablePassages.length > 0 ? 3 : 0;
-    const technicalWeight = availableTechnical.length > 0 ? 2 : 0;
-    const fillerWeight =
-      passageWeight === 0 && technicalWeight === 0 && passagesUsedThisBlock.length > 0
-        ? 1
-        : 0;
+  // Build interleaved queue: alternate tech and passages
+  const queue: Array<TechnicalItem | MusicalPassage> = [];
+  let ti = 0, pi = 0;
+  while (ti < assignedTech.length || pi < assignedPassages.length) {
+    if (ti < assignedTech.length) queue.push(assignedTech[ti++]);
+    if (pi < assignedPassages.length) queue.push(assignedPassages[pi++]);
+  }
 
-    const totalWeight = passageWeight + technicalWeight + fillerWeight;
+  // Fill from priority queue first
+  for (const item of queue) {
+    if (totalDuration >= targetBlockDuration - 1) break;
+    addItem(item);
+  }
 
-    if (totalWeight === 0) {
-      // No items available at all
-      break;
-    }
-
-    const roll = Math.random() * totalWeight;
-
-    if (roll < passageWeight && availablePassages.length > 0) {
-      // Priority 1: Due passage
-      const passage = availablePassages[0]; // Already sorted by priority
-      pool.passages = pool.passages.filter(p => p.id !== passage.id);
-      if (!addSegment(passage)) break;
-    } else if (roll < passageWeight + technicalWeight && availableTechnical.length > 0) {
-      // Priority 2: Technical item
-      const techIndex = Math.floor(Math.random() * availableTechnical.length);
-      const tech = availableTechnical[techIndex];
-      pool.technical = pool.technical.filter(t => t.id !== tech.id);
-      if (!addSegment(tech)) break;
-    } else if (fillerWeight > 0) {
-      // Priority 3: Filler - repeat passages practiced earlier
-      // Reset the "used" status for passages to allow re-use
-      const fillerPassage = passagesUsedThisBlock[0];
-      passagesUsedThisBlock.push(passagesUsedThisBlock.shift()!); // Rotate
-      usedInBlock.delete(fillerPassage.id); // Allow re-use
-
-      // Create segment with modified title to indicate repetition
-      const remainingTime = targetBlockDuration - totalDuration;
-      const maxDur = Math.min(maxSegmentDuration, remainingTime);
-      const minDur = Math.min(minSegmentDuration, remainingTime);
-
-      if (minDur < 1) break;
-
-      const duration = maxDur <= minDur ? minDur : randomDuration(minDur, maxDur);
-      const fillerTitle = getPassageTitle(fillerPassage);
-      const segment: PracticeSegment = {
-        id: generateId(),
-        itemId: fillerPassage.id,
-        itemType: 'passage',
-        duration,
-        order: order++,
-        title: `${fillerTitle} (Review)`,
-        notes: fillerPassage.notes,
-        imageData: fillerPassage.imageData,
-      };
-      segments.push(segment);
-      totalDuration += duration;
-    } else {
-      // Nothing else to add
-      break;
+  // Fill any remaining time with unused items from the global pools (still no repeats)
+  if (totalDuration < targetBlockDuration - 1) {
+    const extras = shuffle([
+      ...allPassages.filter(p => !usedInBlock.has(p.id)),
+      ...allTechnical.filter(t => !usedInBlock.has(t.id)),
+    ]);
+    for (const item of extras) {
+      if (totalDuration >= targetBlockDuration - 1) break;
+      addItem(item);
     }
   }
 
@@ -187,33 +146,52 @@ export function generateDailyPractice(
   const today = getToday();
   const numBlocks = settings.numBlocks ?? 3;
 
-  // Get due passages, sorted by priority
-  const duePassages = getDuePassages(passages);
+  // Only include active Gebrian passages — initial-bucket passages are never scheduled.
+  // getDuePassages already sorts by priority (earlier SRS phases first).
+  const activePassages = getDuePassages(passages).filter(p => p.status === 'active');
 
-  // Create mutable pools for distribution across blocks
-  const pool: ItemPool = {
-    technical: shuffle([...technicalItems]),
-    passages: [...duePassages],
-    fillerPassages: [...duePassages], // Backup for when we need fillers
-  };
+  // Shuffle technical items for variety across sessions
+  const shuffledTech = shuffle([...technicalItems]);
 
+  // Pre-plan block assignments to guarantee daily coverage:
+  //   - Each technical item:  assigned to at least 1 block
+  //   - Each active passage: assigned to at least 2 different blocks
+  const blockAssignments: Array<Array<TechnicalItem | MusicalPassage>> = Array.from(
+    { length: numBlocks },
+    () => []
+  );
+
+  // Distribute technical items round-robin so they're spread across blocks
+  shuffledTech.forEach((tech, idx) => {
+    blockAssignments[idx % numBlocks].push(tech);
+  });
+
+  // Distribute passages — first occurrence (priority order, round-robin across blocks)
+  activePassages.forEach((passage, idx) => {
+    blockAssignments[idx % numBlocks].push(passage);
+  });
+
+  // Distribute passages — second occurrence, guaranteed in a *different* block
+  if (numBlocks >= 2) {
+    const offset = Math.max(1, Math.ceil(numBlocks / 2));
+    activePassages.forEach((passage, idx) => {
+      // Walk forward from the offset position until we find a block without this passage
+      for (let delta = 1; delta <= numBlocks; delta++) {
+        const targetBlock = (idx + offset + delta - 1) % numBlocks;
+        if (!blockAssignments[targetBlock].some(item => item.id === passage.id)) {
+          blockAssignments[targetBlock].push(passage);
+          break;
+        }
+      }
+    });
+  }
+
+  // Generate each block according to its pre-planned assignments
   const blocks: PracticeBlock[] = [];
-  const globalUsedSet = new Set<string>(); // Track items used across all blocks
-
-  for (let i = 1; i <= numBlocks; i++) {
-    // For each block, allow re-use of technical items but track passages carefully
-    const blockUsedSet = new Set<string>();
-
-    // Replenish technical items for each block (they repeat daily)
-    if (pool.technical.length < technicalItems.length / 2) {
-      pool.technical = shuffle([...technicalItems]);
-    }
-
-    const block = generateBlock(i, pool, blockUsedSet, settings);
-    blocks.push(block);
-
-    // Merge used items into global set
-    blockUsedSet.forEach(id => globalUsedSet.add(id));
+  for (let i = 0; i < numBlocks; i++) {
+    blocks.push(
+      generateBlock(i + 1, blockAssignments[i], activePassages, shuffledTech, settings)
+    );
   }
 
   return {
