@@ -78,10 +78,14 @@ export function PassagesView() {
 
   const initialPassages = state.passages.filter(p => p.status === 'initial');
   const gebrianPassages = state.passages.filter(
-    p => p.status === 'active' && (SRS_SCHEDULE[p.srsPhase]?.daysOn ?? 0) > 0
+    p => p.status === 'active' && (
+      (SRS_SCHEDULE[p.srsPhase]?.daysOn ?? 0) > 0 || isPassageDueToday(p)
+    )
   );
   const restingPassages = state.passages.filter(
-    p => p.status === 'active' && (SRS_SCHEDULE[p.srsPhase]?.daysOn ?? 1) === 0
+    p => p.status === 'active' &&
+    (SRS_SCHEDULE[p.srsPhase]?.daysOn ?? 1) === 0 &&
+    !isPassageDueToday(p)
   );
   const performancePassages = state.passages.filter(p => p.status === 'performance');
 
