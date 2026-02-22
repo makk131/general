@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import type React from 'react';
 import type { PracticeBlock, PracticeSegment } from '../types';
 import { useApp } from './AppContext';
 import { useTimer, formatTime } from '../hooks/useTimer';
@@ -20,8 +21,28 @@ function SegmentTimer({
   onExpand: () => void;
   onComplete: () => void;
 }) {
-  const { dispatch } = useApp();
+  const { state, dispatch } = useApp();
   const [isEditing, setIsEditing] = useState(false);
+  const [noteText, setNoteText] = useState(segment.notes || '');
+  const [noteDirty, setNoteDirty] = useState(false);
+  const [noteSaved, setNoteSaved] = useState(false);
+
+  const handleSaveNote = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    dispatch({
+      type: 'UPDATE_SEGMENT',
+      payload: { blockId, segmentId: segment.id, updates: { notes: noteText } },
+    });
+    if (segment.itemType === 'passage') {
+      const passage = state.passages.find(p => p.id === segment.itemId);
+      if (passage) {
+        dispatch({ type: 'UPDATE_PASSAGE', payload: { ...passage, notes: noteText } });
+      }
+    }
+    setNoteDirty(false);
+    setNoteSaved(true);
+    setTimeout(() => setNoteSaved(false), 2000);
+  };
 
   const handleTimerComplete = useCallback(() => {
     onComplete();
@@ -161,13 +182,37 @@ function SegmentTimer({
           </div>
 
           {/* Notes */}
-          {segment.notes && (
+          {segment.itemType === 'passage' ? (
+            <div className="space-y-2">
+              <textarea
+                value={noteText}
+                onChange={(e) => { setNoteText(e.target.value); setNoteDirty(true); setNoteSaved(false); }}
+                onClick={(e) => e.stopPropagation()}
+                placeholder="Add practice notes for next time…"
+                className="w-full px-3 py-2 rounded-lg bg-[var(--color-bg-input)] text-[var(--color-text-primary)]
+                           border border-transparent focus:border-[var(--color-music-green)] focus:outline-none
+                           text-sm min-h-[72px] resize-none"
+              />
+              {(noteDirty || noteSaved) && (
+                <button
+                  onClick={handleSaveNote}
+                  className={`touch-target px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    noteSaved
+                      ? 'bg-green-700/40 text-green-300'
+                      : 'bg-[var(--color-music-green)] text-white hover:bg-[var(--color-music-green-dark)]'
+                  }`}
+                >
+                  {noteSaved ? '✓ Saved' : 'Save note'}
+                </button>
+              )}
+            </div>
+          ) : segment.notes ? (
             <div className="bg-[var(--color-bg-input)] rounded-lg p-4">
               <p className="text-[var(--color-text-secondary)] whitespace-pre-wrap">
                 {segment.notes}
               </p>
             </div>
-          )}
+          ) : null}
 
           {/* Music Snippet */}
           {segment.imageData && (

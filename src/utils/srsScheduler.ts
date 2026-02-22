@@ -134,9 +134,14 @@ export function advancePassageAfterPractice(passage: MusicalPassage): MusicalPas
       phaseDay = 0;
     }
   } else {
-    // Coming back from an off phase (rest is over, user just practiced) → move to next phase
+    // Coming back from an off phase: today's practice IS day 1 of the next on-phase.
     srsPhase++;
-    phaseDay = 0;
+    phaseDay = 1;
+    // If that on-phase only has 1 day (daysOn === 1), it's already complete — advance again.
+    if (srsPhase < SRS_SCHEDULE.length && phaseDay >= SRS_SCHEDULE[srsPhase].daysOn) {
+      srsPhase++;
+      phaseDay = 0;
+    }
   }
 
   // Check if we've completed all phases
