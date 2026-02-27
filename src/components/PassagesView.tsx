@@ -255,7 +255,9 @@ export function PassagesView() {
                 Start Gebrian
               </button>
             )}
-            {passage.status === 'active' && SRS_SCHEDULE[passage.srsPhase]?.daysOn > 0 && (
+            {passage.status === 'active' && (
+              SRS_SCHEDULE[passage.srsPhase]?.daysOn > 0 || isPassageDueToday(passage)
+            ) && (
               <button
                 onClick={() => handleSkipToRest(passage)}
                 className="touch-target px-4 py-2 bg-[var(--color-performance-gold)]/20 text-[var(--color-performance-gold)]
