@@ -7,7 +7,7 @@ import type {
   AppSettings,
   TabView,
 } from '../types';
-import { DEFAULT_SETTINGS } from '../types';
+import { DEFAULT_SETTINGS, SRS_SCHEDULE } from '../types';
 import {
   loadTechnicalItems,
   loadPassages,
@@ -22,7 +22,7 @@ import {
   generateId,
 } from '../utils/storage';
 import { generateDailyPractice, needsRegeneration } from '../utils/blockGenerator';
-import { advancePassageAfterPractice, advanceToGebrian, advanceToNextRestPhase } from '../utils/srsScheduler';
+import { advancePassageAfterPractice, advanceToGebrian, advanceToNextRestPhase, addDays, calculateNextDueDate } from '../utils/srsScheduler';
 
 // ============================================
 // App State & Context
@@ -58,7 +58,8 @@ type AppAction =
   | { type: 'ADD_JOURNAL_ENTRY'; payload: Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'> }
   | { type: 'UPDATE_JOURNAL_ENTRY'; payload: JournalEntry }
   | { type: 'DELETE_JOURNAL_ENTRY'; payload: string }
-  | { type: 'UPDATE_SETTINGS'; payload: Partial<AppSettings> };
+  | { type: 'UPDATE_SETTINGS'; payload: Partial<AppSettings> }
+  | { type: 'TAKE_DAY_OFF' };
 
 const initialState: AppState = {
   technicalItems: [],
@@ -295,6 +296,21 @@ function appReducer(state: AppState, action: AppAction): AppState {
       const settings = { ...state.settings, ...action.payload };
       saveSettings(settings);
       return { ...state, settings };
+    }
+
+    case 'TAKE_DAY_OFF': {
+      // Push every resting (off-phase) passage's lastPracticedDate forward by 1 day,
+      // which extends its rest period by one day and delays the return date accordingly.
+      const passages = state.passages.map(p => {
+        if (p.status !== 'active') return p;
+        const currentPhase = SRS_SCHEDULE[p.srsPhase];
+        if (!currentPhase || currentPhase.daysOn !== 0 || !p.lastPracticedDate) return p;
+        const newLastPracticedDate = addDays(p.lastPracticedDate, 1);
+        const newNextDueDate = calculateNextDueDate({ ...p, lastPracticedDate: newLastPracticedDate });
+        return { ...p, lastPracticedDate: newLastPracticedDate, nextDueDate: newNextDueDate, updatedAt: new Date().toISOString() };
+      });
+      savePassages(passages);
+      return { ...state, passages };
     }
 
     default:

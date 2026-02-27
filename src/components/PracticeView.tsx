@@ -322,6 +322,12 @@ export function PracticeView() {
     }
   };
 
+  const handleDayOff = () => {
+    if (confirm('Take a full day off? All resting passages will return one day later than scheduled.')) {
+      dispatch({ type: 'TAKE_DAY_OFF' });
+    }
+  };
+
   // Check if we have any items to practice
   const hasItems = state.technicalItems.length > 0 || state.passages.length > 0;
 
@@ -396,6 +402,13 @@ export function PracticeView() {
         </div>
         <div className="flex gap-3">
           <Metronome />
+          <button
+            onClick={handleDayOff}
+            className="touch-target px-4 py-2 bg-[var(--color-bg-input)] text-[var(--color-performance-gold)]
+                       rounded-lg hover:bg-[var(--color-bg-input)]/80 transition-colors"
+          >
+            Day Off
+          </button>
           <button
             onClick={handleRegenerate}
             className="touch-target px-4 py-2 bg-[var(--color-bg-input)] text-[var(--color-text-secondary)]
