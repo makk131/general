@@ -22,7 +22,7 @@ import {
   generateId,
 } from '../utils/storage';
 import { generateDailyPractice, needsRegeneration } from '../utils/blockGenerator';
-import { advancePassageAfterPractice, advanceToGebrian, advanceToNextRestPhase, addDays, calculateNextDueDate } from '../utils/srsScheduler';
+import { advancePassageAfterPractice, advanceToGebrian, advanceToNextRestPhase, addDays, calculateNextDueDate, getToday } from '../utils/srsScheduler';
 
 // ============================================
 // App State & Context
@@ -201,7 +201,11 @@ function appReducer(state: AppState, action: AppAction): AppState {
       let passages = state.passages;
       if (segment?.itemType === 'passage') {
         const passage = state.passages.find(p => p.id === itemId);
-        if (passage) {
+        // Only advance SRS state on the first completion today.
+        // If the passage was already practiced today (e.g. appeared in multiple
+        // blocks and was ticked off before), skip the advance so repeated
+        // completions don't accidentally walk it through extra rest phases.
+        if (passage && passage.lastPracticedDate !== getToday()) {
           const updatedPassage = advancePassageAfterPractice(passage);
           passages = state.passages.map(p =>
             p.id === itemId ? updatedPassage : p
