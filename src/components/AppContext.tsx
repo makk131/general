@@ -22,7 +22,7 @@ import {
   generateId,
 } from '../utils/storage';
 import { generateDailyPractice, needsRegeneration } from '../utils/blockGenerator';
-import { advancePassageAfterPractice, advanceToGebrian, advanceToNextRestPhase, addDays, calculateNextDueDate, getToday } from '../utils/srsScheduler';
+import { computePassageStateFromStartDate, advanceToGebrian, advanceToNextRestPhase, addDays, calculateNextDueDate, getToday } from '../utils/srsScheduler';
 
 // ============================================
 // App State & Context
@@ -180,35 +180,31 @@ function appReducer(state: AppState, action: AppAction): AppState {
 
       const { blockId, segmentId, itemId } = action.payload;
 
-      // Update the daily practice
+      // Update the daily practice block
       const dailyPractice = {
         ...state.dailyPractice,
         blocks: state.dailyPractice.blocks.map(block => {
           if (block.id !== blockId) return block;
-
           const completedSegments = [...block.completedSegments, segmentId];
           const isComplete = completedSegments.length === block.segments.length;
-
           return { ...block, completedSegments, isComplete };
         }),
       };
 
-      // Update the passage's SRS state if it's a passage
+      // Record lastPracticedDate for display purposes.
+      // SRS phase/day advancement is calendar-driven and happens automatically
+      // on each app load — no manual completion required.
       const segment = state.dailyPractice.blocks
         .find(b => b.id === blockId)
         ?.segments.find(s => s.id === segmentId);
-
       let passages = state.passages;
       if (segment?.itemType === 'passage') {
         const passage = state.passages.find(p => p.id === itemId);
-        // Only advance SRS state on the first completion today.
-        // If the passage was already practiced today (e.g. appeared in multiple
-        // blocks and was ticked off before), skip the advance so repeated
-        // completions don't accidentally walk it through extra rest phases.
         if (passage && passage.lastPracticedDate !== getToday()) {
-          const updatedPassage = advancePassageAfterPractice(passage);
           passages = state.passages.map(p =>
-            p.id === itemId ? updatedPassage : p
+            p.id === itemId
+              ? { ...p, lastPracticedDate: getToday(), updatedAt: new Date().toISOString() }
+              : p
           );
           savePassages(passages);
         }
@@ -340,29 +336,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const journalEntries = loadJournalEntries();
     const settings = loadSettings();
 
+    // Sync every active passage to its calendar-driven SRS state.
+    // This makes the Gebrian schedule fully automatic: phases advance based on
+    // elapsed days since the passage's start date, with no user interaction needed.
+    let passagesChanged = false;
+    passages = passages.map(p => {
+      if (p.status !== 'active') return p;
+      const computed = computePassageStateFromStartDate(p.startDate);
+      if (computed.isComplete) {
+        passagesChanged = true;
+        return {
+          ...p,
+          status: 'performance' as const,
+          srsPhase: SRS_SCHEDULE.length,
+          phaseDay: 0,
+          completedDate: getToday(),
+          nextDueDate: undefined,
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      if (
+        p.srsPhase !== computed.srsPhase ||
+        p.phaseDay !== computed.phaseDay ||
+        p.nextDueDate !== computed.nextDueDate
+      ) {
+        passagesChanged = true;
+        return { ...p, srsPhase: computed.srsPhase, phaseDay: computed.phaseDay, nextDueDate: computed.nextDueDate };
+      }
+      return p;
+    });
+    if (passagesChanged) savePassages(passages);
+
     // Check if we need to regenerate today's practice
     if (needsRegeneration(dailyPractice) && (technicalItems.length > 0 || passages.length > 0)) {
-      // Auto-advance any passages from the previous day's schedule that the user
-      // didn't manually mark complete. This means just viewing the schedule counts
-      // as having practiced — no need to hit Complete each segment.
-      if (dailyPractice) {
-        const prevDate = dailyPractice.date;
-        const advancedIds = new Set<string>();
-        for (const block of dailyPractice.blocks) {
-          for (const segment of block.segments) {
-            if (segment.itemType === 'passage' && !advancedIds.has(segment.itemId)) {
-              advancedIds.add(segment.itemId);
-            }
-          }
-        }
-        passages = passages.map(p => {
-          // Skip if already advanced manually on that date
-          if (!advancedIds.has(p.id) || p.lastPracticedDate === prevDate) return p;
-          return advancePassageAfterPractice(p, prevDate);
-        });
-        savePassages(passages);
-      }
-
       dailyPractice = generateDailyPractice(technicalItems, passages, settings);
       saveDailyPractice(dailyPractice);
     }

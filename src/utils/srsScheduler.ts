@@ -53,48 +53,89 @@ export function calculateNextDueDate(passage: MusicalPassage): string {
   return lastPracticedDate ? addDays(lastPracticedDate, 1) : startDate;
 }
 
+// Compute the exact SRS state for an active passage based purely on how many
+// calendar days have elapsed since its Gebrian start date. This makes the
+// entire schedule deterministic — no user interaction required to advance.
+export function computePassageStateFromStartDate(
+  startDate: string,
+  targetDate?: string
+): {
+  srsPhase: number;
+  phaseDay: number;
+  isDueToday: boolean;
+  isComplete: boolean;
+  nextDueDate: string | undefined;
+} {
+  const today = targetDate ?? getToday();
+  // dayNumber is 1-indexed: 1 = startDate itself
+  const dayNumber = daysBetween(startDate, today) + 1;
+
+  if (dayNumber < 1) {
+    return { srsPhase: 0, phaseDay: 0, isDueToday: false, isComplete: false, nextDueDate: startDate };
+  }
+
+  let daysCounted = 0;
+
+  for (let phaseIdx = 0; phaseIdx < SRS_SCHEDULE.length; phaseIdx++) {
+    const phase = SRS_SCHEDULE[phaseIdx];
+    const phaseDays = phase.daysOn > 0 ? phase.daysOn : phase.daysOff;
+
+    if (dayNumber <= daysCounted + phaseDays) {
+      const dayInPhase = dayNumber - daysCounted - 1; // 0-indexed within phase
+      const isDueToday = phase.daysOn > 0;
+
+      let nextDueDate: string | undefined;
+      if (isDueToday) {
+        if (dayInPhase + 1 < phaseDays) {
+          // More on-days left in this phase
+          nextDueDate = addDays(today, 1);
+        } else {
+          // Last day of this on-phase — find start of next on-phase
+          nextDueDate = _nextOnPhaseDate(startDate, phaseIdx, daysCounted + phaseDays);
+        }
+      } else {
+        // Off-phase: next due = first day of the following on-phase
+        nextDueDate = addDays(startDate, daysCounted + phaseDays);
+      }
+
+      return {
+        srsPhase: phaseIdx,
+        phaseDay: isDueToday ? dayInPhase : 0,
+        isDueToday,
+        isComplete: false,
+        nextDueDate,
+      };
+    }
+
+    daysCounted += phaseDays;
+  }
+
+  // All phases exhausted → passage is performance-ready
+  return { srsPhase: SRS_SCHEDULE.length, phaseDay: 0, isDueToday: false, isComplete: true, nextDueDate: undefined };
+}
+
+// Find the absolute date (as YYYY-MM-DD) when the next on-phase begins,
+// given we've already consumed `absoluteDaysSoFar` days from startDate.
+function _nextOnPhaseDate(startDate: string, fromPhaseIdx: number, absoluteDaysSoFar: number): string | undefined {
+  let days = absoluteDaysSoFar;
+  for (let i = fromPhaseIdx + 1; i < SRS_SCHEDULE.length; i++) {
+    const phase = SRS_SCHEDULE[i];
+    if (phase.daysOn > 0) {
+      return addDays(startDate, days);
+    }
+    days += phase.daysOff;
+  }
+  return undefined;
+}
+
 // Check if a passage is due today
 export function isPassageDueToday(passage: MusicalPassage): boolean {
-  // Initial routine passages are always due
-  if (passage.status === 'initial') {
-    return true;
-  }
+  if (passage.status === 'initial') return true;
+  if (passage.status === 'performance') return false;
 
-  if (passage.status === 'performance') {
-    return false;
-  }
-
-  const today = getToday();
-
-  // If never practiced, and it's the start date or after, it's due
-  if (!passage.lastPracticedDate) {
-    return passage.startDate <= today;
-  }
-
-  // If already practiced today, not due again
-  if (passage.lastPracticedDate === today) {
-    return false;
-  }
-
-  const currentPhase = SRS_SCHEDULE[passage.srsPhase];
-
-  if (!currentPhase) {
-    return false;
-  }
-
-  // Off phase: rest is complete only after strictly more than daysOff days have passed.
-  // e.g. daysOff=1 → not due on day 1 after last practice, due on day 2+
-  if (currentPhase.daysOn === 0) {
-    const daysSinceLastPractice = daysBetween(passage.lastPracticedDate, today);
-    return daysSinceLastPractice > currentPhase.daysOff;
-  }
-
-  // On phase - check if we still have days left in this phase
-  if (passage.phaseDay < currentPhase.daysOn) {
-    return true;
-  }
-
-  return false;
+  // Calendar-driven: determine entirely from the Gebrian start date
+  const { isDueToday, isComplete } = computePassageStateFromStartDate(passage.startDate);
+  return isDueToday && !isComplete;
 }
 
 // Advance the passage to the next state after practice.
