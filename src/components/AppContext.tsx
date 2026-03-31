@@ -342,6 +342,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     // Check if we need to regenerate today's practice
     if (needsRegeneration(dailyPractice) && (technicalItems.length > 0 || passages.length > 0)) {
+      // Auto-advance any passages from the previous day's schedule that the user
+      // didn't manually mark complete. This means just viewing the schedule counts
+      // as having practiced — no need to hit Complete each segment.
+      if (dailyPractice) {
+        const prevDate = dailyPractice.date;
+        const advancedIds = new Set<string>();
+        for (const block of dailyPractice.blocks) {
+          for (const segment of block.segments) {
+            if (segment.itemType === 'passage' && !advancedIds.has(segment.itemId)) {
+              advancedIds.add(segment.itemId);
+            }
+          }
+        }
+        passages = passages.map(p => {
+          // Skip if already advanced manually on that date
+          if (!advancedIds.has(p.id) || p.lastPracticedDate === prevDate) return p;
+          return advancePassageAfterPractice(p, prevDate);
+        });
+        savePassages(passages);
+      }
+
       dailyPractice = generateDailyPractice(technicalItems, passages, settings);
       saveDailyPractice(dailyPractice);
     }

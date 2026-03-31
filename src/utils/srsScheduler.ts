@@ -97,9 +97,11 @@ export function isPassageDueToday(passage: MusicalPassage): boolean {
   return false;
 }
 
-// Advance the passage to the next state after practice
-export function advancePassageAfterPractice(passage: MusicalPassage): MusicalPassage {
-  const today = getToday();
+// Advance the passage to the next state after practice.
+// Pass practiceDate to record the advance as of a specific date (e.g. yesterday
+// when auto-advancing on behalf of a missed completion).
+export function advancePassageAfterPractice(passage: MusicalPassage, practiceDate?: string): MusicalPassage {
+  const today = practiceDate ?? getToday();
 
   // Initial routine passages don't advance through SRS, just track practice
   if (passage.status === 'initial') {
